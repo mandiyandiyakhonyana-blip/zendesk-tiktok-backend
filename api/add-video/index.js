@@ -3,27 +3,28 @@ const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 module.exports = async (req, res) => {
-  // Add CORS headers for the response
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', 'application/json');
+  
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    // Because we are sending text/plain to bypass the CORS 405 error,
-    // we must parse the string back into a JSON object manually.
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    // If the body is coming in as a string (text/plain), we must parse it
+    let body = req.body;
+    if (typeof body === 'string') {
+        try { body = JSON.parse(body); } catch(e) { throw new Error("Invalid JSON body"); }
+    }
+
     const { tiktokUrl, keywords } = body;
 
-    if (!tiktokUrl) throw new Error("Missing TikTok URL");
+    if (!tiktokUrl) return res.status(400).json({ success: false, error: "Missing URL" });
 
     const { error } = await supabase.from('monitored_videos').insert([
       { tiktok_url: tiktokUrl, keywords, is_active: true }
     ]);
 
     if (error) throw error;
-
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error("API Error:", error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 };
