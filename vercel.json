@@ -1,21 +1,5 @@
 {
   "version": 2,
-  "routes": [
-    {
-      "src": "/api/add-video",
-      "methods": ["POST", "OPTIONS"],
-      "dest": "/api/add-video.js"
-    },
-    {
-      "src": "/api/scrape",
-      "methods": ["GET"],
-      "dest": "/api/scrape/index.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/$1"
-    }
-  ],
   "crons": [
     {
       "path": "/api/scrape",
