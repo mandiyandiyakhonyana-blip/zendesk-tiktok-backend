@@ -1,8 +1,12 @@
 {
+  "version": 2,
+  "rewrites": [
+    { "source": "/admin", "destination": "/admin.html" }
+  ],
   "crons": [
     {
       "path": "/api/scrape",
-      "schedule": "0 0 * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }
