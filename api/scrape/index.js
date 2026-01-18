@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  // 1. FORCE NO CACHE (Fixes the 304 error)
   res.setHeader('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate');
   res.setHeader('Content-Type', 'application/json');
 
@@ -10,16 +9,19 @@ export default async function handler(req, res) {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
+  console.log('--- STARTING SCRAPE RUN ---');
+
   try {
-    // 2. GET TRACKED VIDEOS
     const { data: videos, error: vError } = await supabase.from('videos').select('*');
     if (vError) throw vError;
+
+    console.log(`Found ${videos.length} videos to track in Supabase.`);
 
     const allLeads = [];
 
     for (const video of videos) {
-      // 3. RUN APIFY TIKTOK SCRAPER
-      // Using the TikTok Comment Scraper (apify/tiktok-comments-scraper)
+      console.log(`Scraping video: ${video.url}`);
+      
       const apifyResponse = await fetch(`https://api.apify.com/v2/acts/apify~tiktok-comments-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_API_TOKEN}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32,68 +34,83 @@ export default async function handler(req, res) {
 
       const comments = await apifyResponse.json();
 
-      if (!Array.isArray(comments)) continue;
+      if (!Array.isArray(comments)) {
+        console.error('Apify did not return an array. Check API Token. Response:', comments);
+        continue;
+      }
+
+      console.log(`Apify found ${comments.length} total comments for this video.`);
 
       for (const comment of comments) {
-        const text = comment.text.toLowerCase();
-        const hasKeyword = video.keywords.some(kw => text.includes(kw.toLowerCase()));
+        const commentText = comment.text || "";
+        const text = commentText.toLowerCase();
+        
+        // Match keywords (case insensitive)
+        const matchedKeywords = video.keywords.filter(kw => text.includes(kw.toLowerCase()));
 
-        if (hasKeyword) {
-          // 4. CHECK FOR DUPLICATES IN SUPABASE (Don't create the same ticket twice)
+        if (matchedKeywords.length > 0) {
+          console.log(`MATCH FOUND! Keyword: [${matchedKeywords.join(', ')}] Text: "${commentText}"`);
+
           const { data: existingLead } = await supabase
             .from('leads')
             .select('id')
             .eq('external_id', comment.id)
             .single();
 
-          if (!existingLead) {
-            // 5. CREATE ZENDESK TICKET
-            const zendeskSub = process.env.ZENDESK_SUBDOMAIN; // Should be 'd3v-nkstudio'
-            const zendeskEmail = process.env.ZENDESK_EMAIL;
-            const zendeskToken = process.env.ZENDESK_API_TOKEN;
+          if (existingLead) {
+            console.log(`Lead ${comment.id} already exists in Supabase. Skipping.`);
+            continue;
+          }
 
-            const authString = Buffer.from(`${zendeskEmail}/token:${zendeskToken}`).toString('base64');
+          console.log(`Sending lead to Zendesk for user: ${comment.authorMeta?.uniqueId}`);
 
-            const ticketBody = {
+          const zendeskSub = process.env.ZENDESK_SUBDOMAIN;
+          const zendeskEmail = process.env.ZENDESK_EMAIL;
+          const zendeskToken = process.env.ZENDESK_API_TOKEN;
+          const authString = Buffer.from(`${zendeskEmail}/token:${zendeskToken}`).toString('base64');
+
+          const zResponse = await fetch(`https://${zendeskSub}.zendesk.com/api/v2/tickets.json`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${authString}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
               ticket: {
-                subject: `TikTok Lead: ${comment.authorMeta.uniqueId}`,
+                subject: `TikTok Lead: ${comment.authorMeta?.uniqueId || 'Unknown'}`,
                 comment: {
-                  body: `New lead found on TikTok!\n\nUser: ${comment.authorMeta.nickname} (@${comment.authorMeta.uniqueId})\nComment: "${comment.text}"\nVideo URL: ${video.url}\n\nThis lead was captured because it matched your keywords: ${video.keywords.join(', ')}`
+                  body: `Lead found!\n\nUser: @${comment.authorMeta?.uniqueId}\nComment: "${commentText}"\nVideo: ${video.url}`
                 },
-                priority: "urgent",
-                tags: ["tiktok_lead", "automated_capture"]
+                priority: "urgent"
               }
-            };
+            })
+          });
 
-            const zResponse = await fetch(`https://${zendeskSub}.zendesk.com/api/v2/tickets.json`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Basic ${authString}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(ticketBody)
-            });
+          if (zResponse.ok) {
+            const zData = await zResponse.json();
+            console.log(`✅ Zendesk Ticket Created: ${zData.ticket.id}`);
 
-            if (zResponse.ok) {
-              // 6. SAVE TO SUPABASE LEADS TABLE
-              await supabase.from('leads').insert([{
-                video_url: video.url,
-                username: comment.authorMeta.uniqueId,
-                comment_text: comment.text,
-                external_id: comment.id // TikTok's unique comment ID
-              }]);
-              
-              allLeads.push({ user: comment.authorMeta.uniqueId, status: 'Ticket Created' });
-            }
+            await supabase.from('leads').insert([{
+              video_url: video.url,
+              username: comment.authorMeta?.uniqueId,
+              comment_text: commentText,
+              external_id: comment.id
+            }]);
+            
+            allLeads.push({ user: comment.authorMeta?.uniqueId, ticketId: zData.ticket.id });
+          } else {
+            const errorBody = await zResponse.text();
+            console.error(`❌ Zendesk API Error: ${zResponse.status} - ${errorBody}`);
           }
         }
       }
     }
 
-    return res.status(200).json({ success: true, leadsFound: allLeads.length, details: allLeads });
+    console.log('--- RUN FINISHED ---');
+    return res.status(200).json({ success: true, leadsProcessed: allLeads.length });
 
   } catch (error) {
-    console.error('Scrape Error:', error);
+    console.error('SYSTEM CRASH:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
