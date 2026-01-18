@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - TikTok Lead Gen</title>
+    <style>
+        body { font-family: sans-serif; max-width: 450px; margin: 50px auto; padding: 20px; background: #f8f9fa; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        input, textarea { width: 100%; padding: 12px; margin: 10px 0 20px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { background: #000; color: #fff; padding: 14px; border: none; width: 100%; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>➕ Add TikTok Campaign</h2>
+        <input type="text" id="url" placeholder="TikTok URL">
+        <textarea id="keys" placeholder="Keywords (one per line)" rows="4"></textarea>
+        <button id="btn" onclick="submit()">Start Monitoring</button>
+        <div id="status" style="margin-top:20px; display:none; padding:10px; border-radius:8px;"></div>
+    </div>
+    <script>
+        async function submit() {
+            const tiktokUrl = document.getElementById('url').value;
+            const keywords = document.getElementById('keys').value.split('\n').filter(k => k.trim());
+            const status = document.getElementById('status');
+            
+            try {
+                const res = await fetch('/api/add-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ tiktokUrl, keywords })
+                });
+                const data = await res.json();
+                status.style.display = 'block';
+                status.innerText = data.success ? "✅ Success!" : "❌ Error: " + data.error;
+                status.style.background = data.success ? "#e6fffa" : "#fff5f5";
+            } catch (e) {
+                alert("Submit failed: " + e.message);
+            }
+        }
+    </script>
+</body>
+</html>
