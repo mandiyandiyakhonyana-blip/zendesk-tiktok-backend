@@ -6,15 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-function matchesKeywords(text, keywords) {
-  const lowerText = text.toLowerCase();
-  return keywords.filter(keyword => {
-    const cleanKeyword = keyword.toLowerCase().trim();
-    return lowerText.includes(cleanKeyword);
-  });
-}
-
-async function createZendeskTicket(comment, videoUrl, matchedKeywords) {
+// Helper to create Zendesk Ticket
+async function createZendeskTicket(comment, videoUrl) {
   try {
     const response = await axios.post(
       `https://d3v-nkstudio.zendesk.com/api/v2/tickets.json`,
@@ -22,12 +15,9 @@ async function createZendeskTicket(comment, videoUrl, matchedKeywords) {
         ticket: {
           subject: `TikTok Lead: @${comment.authorMeta?.name || 'User'}`,
           comment: {
-            body: `New TikTok Comment Found!\n\nUser: @${comment.authorMeta?.name}\nComment: "${comment.text}"\n\n---\nMatched Keywords: ${matchedKeywords.join(', ')}\nVideo Link: ${videoUrl}`
+            body: `New Lead Found!\n\nUser: @${comment.authorMeta?.name}\nComment: "${comment.text}"\n\nVideo: ${videoUrl}`
           },
-          external_id: `tiktok_${comment.id}`, 
-          custom_fields: [
-            { id: 42086607230993, value: videoUrl } 
-          ]
+          external_id: `tiktok_${comment.id}` // Prevents duplicates
         }
       },
       {
@@ -39,47 +29,40 @@ async function createZendeskTicket(comment, videoUrl, matchedKeywords) {
     );
     return response.data.ticket.id;
   } catch (error) {
-    console.error('Zendesk API Error:', error.response?.data || error.message);
+    console.error("Zendesk Error:", error.response?.data || error.message);
     return null;
   }
 }
 
-// Vercel Serverless Entry Point
 module.exports = async (req, res) => {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Please use POST' });
-  }
-
+  console.log("--- WORKER STARTED ---");
+  
   try {
+    // 1. Fetch active videos from Supabase
     const { data: videos, error: dbError } = await supabase
       .from('monitored_videos')
       .select('*')
       .eq('is_active', true);
 
     if (dbError) throw dbError;
-    if (!videos || videos.length === 0) {
-      return res.status(200).json({ message: 'No active videos to scan.' });
-    }
-
-    let totalTicketsCreated = 0;
+    console.log(`Checking ${videos?.length || 0} videos...`);
 
     for (const video of videos) {
-      const apifyRun = await axios.post(
-        `https://api.apify.com/v2/acts/apidojo~tiktok-comments-scraper/runs?token=${process.env.APIFY_TOKEN}`,
-        {
-          videoUrls: [video.tiktok_url],
-          maxCommentsPerVideo: 20
-        }
-      );
+      // 2. Call Apify Scraper
+      const apifyUrl = `https://api.apify.com/v2/acts/apidojo~tiktok-comments-scraper/runs?token=${process.env.APIFY_TOKEN}`;
+      const apifyRun = await axios.post(apifyUrl, {
+        videoUrls: [video.tiktok_url],
+        maxCommentsPerVideo: 10
+      });
 
+      // Wait 5 seconds for data to prepare
       await new Promise(resolve => setTimeout(resolve, 5000));
 
       const datasetId = apifyRun.data.data.defaultDatasetId;
-      const results = await axios.get(
-        `https://api.apify.com/v2/datasets/${datasetId}/items`
-      );
+      const results = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items`);
 
       for (const comment of results.data) {
+        // 3. Check if we already processed this specific comment
         const { data: existing } = await supabase
           .from('processed_comments')
           .select('id')
@@ -88,32 +71,33 @@ module.exports = async (req, res) => {
 
         if (existing) continue;
 
-        const matches = matchesKeywords(comment.text, video.keywords || []);
+        // 4. Simple keyword match (case-insensitive)
+        const keywords = video.keywords || [];
+        const match = keywords.some(k => comment.text.toLowerCase().includes(k.toLowerCase()));
 
-        if (matches.length > 0) {
-          const ticketId = await createZendeskTicket(comment, video.tiktok_url, matches);
-
+        if (match) {
+          console.log(`Found lead: ${comment.text}`);
+          const ticketId = await createZendeskTicket(comment, video.tiktok_url);
+          
           if (ticketId) {
             await supabase.from('processed_comments').insert({
               tiktok_comment_id: comment.id,
               video_id: video.id,
               zendesk_ticket_id: ticketId,
-              comment_text: comment.text,
-              matched_keywords: matches
+              comment_text: comment.text
             });
-            totalTicketsCreated++;
           }
         }
       }
     }
 
-    return res.status(200).json({
-      success: true,
-      tickets_created: totalTicketsCreated,
-      message: `Scan complete.`
-    });
+    return res.status(200).json({ success: true, message: "Scan complete" });
 
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error("FULL ERROR DETAIL:", error.response?.data || error.message);
+    return res.status(error.response?.status || 500).json({ 
+        error: "API rejected request", 
+        detail: error.response?.data || error.message 
+    });
   }
 };
