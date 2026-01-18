@@ -26,25 +26,17 @@
             const keywords = document.getElementById('keys').value.split('\n').filter(k => k.trim());
 
             btn.disabled = true;
-            btn.innerText = "Syncing...";
-            status.style.display = 'none';
+            btn.innerText = "Connecting...";
 
             try {
-                // Adding a trailing slash /api/add-video/ often forces Vercel to recognize the folder
-                const response = await fetch('/api/add-video/', {
+                // MUST be the Vercel path, NOT a github link
+                const response = await fetch('/api/add-video', {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' }, 
                     body: JSON.stringify({ tiktokUrl, keywords })
                 });
 
-                const text = await response.text();
-                
-                // If the response starts with < it's HTML (an error page)
-                if (text.trim().startsWith('<!')) {
-                    throw new Error("Server returned an error page (404/500). Deployment might still be in progress.");
-                }
-
-                const res = JSON.parse(text);
+                const res = await response.json();
                 if (res.success) {
                     status.style.display = 'block';
                     status.style.background = '#e6fffa';
@@ -53,7 +45,7 @@
             } catch (e) {
                 status.style.display = 'block';
                 status.style.background = '#fff5f5';
-                status.innerText = "❌ " + e.message;
+                status.innerText = "❌ Error: " + e.message;
             } finally {
                 btn.disabled = false;
                 btn.innerText = "Start Monitoring";
