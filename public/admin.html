@@ -1,0 +1,30 @@
+<script>
+  async function addCampaign() {
+    const tiktokUrl = document.getElementById('tiktokUrl').value;
+    const keywords = document.getElementById('keywords').value
+      .split('\n')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    if (!tiktokUrl) return alert("Please enter a URL");
+
+    try {
+      const response = await fetch('/api/add-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tiktokUrl, keywords })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        alert("Success! Video added to monitoring.");
+        document.getElementById('tiktokUrl').value = '';
+        document.getElementById('keywords').value = '';
+      } else {
+        alert("Error: " + result.error);
+      }
+    } catch (err) {
+      alert("Failed to connect to server.");
+    }
+  }
+</script>
