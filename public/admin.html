@@ -1,50 +1,40 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Admin - TikTok Filter</title>
-  <style>
-    body { font-family: sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; }
-    label { display: block; margin-top: 15px; font-weight: bold; }
-    input, textarea { width: 100%; padding: 10px; margin: 5px 0 20px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    button { background: #000; color: #fff; padding: 12px; border: none; width: 100%; cursor: pointer; border-radius: 4px; font-weight: bold; }
-  </style>
+    <title>Admin - TikTok Filter</title>
+    <style>
+        body { font-family: sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; background: #f4f4f4; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background: black; color: white; padding: 12px; border: none; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    </style>
 </head>
 <body>
-  <h2>➕ Add TikTok Campaign</h2>
-  <label>TikTok Video URL</label>
-  <input type="text" id="tiktokUrl" placeholder="Paste URL here...">
-  <label>Keywords (One per line)</label>
-  <textarea id="keywords" placeholder="price" rows="6"></textarea>
-  <button id="btn" onclick="addCampaign()">Start Monitoring</button>
-
-  <script>
-    async function addCampaign() {
-      const tiktokUrl = document.getElementById('tiktokUrl').value;
-      const keywords = document.getElementById('keywords').value.split('\n').map(k => k.trim()).filter(k => k.length > 0);
-      if (!tiktokUrl) return alert("Please enter a URL");
-      
-      const btn = document.getElementById('btn');
-      btn.innerText = "Saving...";
-
-      try {
-        const response = await fetch('/api/add-video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tiktokUrl, keywords })
-        });
-        const result = await response.json();
-        if (result.success) {
-          alert("Success! Video added.");
-          location.reload();
-        } else {
-          alert("Error: " + result.error);
+    <div class="container">
+        <h2>➕ Add TikTok Campaign</h2>
+        <input type="text" id="tiktokUrl" placeholder="TikTok Video URL">
+        <textarea id="keywords" placeholder="Keywords (one per line)" rows="5"></textarea>
+        <button id="btn" onclick="addCampaign()">Start Monitoring</button>
+    </div>
+    <script>
+        async function addCampaign() {
+            const tiktokUrl = document.getElementById('tiktokUrl').value;
+            const keywords = document.getElementById('keywords').value.split('\n').map(k => k.trim()).filter(k => k.length > 0);
+            if (!tiktokUrl) return alert("Please enter a URL");
+            const btn = document.getElementById('btn');
+            btn.innerText = "Saving...";
+            try {
+                const response = await fetch('/api/add-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tiktokUrl, keywords })
+                });
+                const result = await response.json();
+                if (result.success) { alert("Success!"); location.reload(); }
+                else { alert("Error: " + result.error); }
+            } catch (err) { alert("Failed to connect"); }
+            finally { btn.innerText = "Start Monitoring"; }
         }
-      } catch (err) {
-        alert("Failed to connect to server.");
-      } finally {
-        btn.innerText = "Start Monitoring";
-      }
-    }
-  </script>
+    </script>
 </body>
 </html>
