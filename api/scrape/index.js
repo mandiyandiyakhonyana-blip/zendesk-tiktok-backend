@@ -51,7 +51,7 @@ module.exports = async (req, res) => {
       // 2. Call Apify Scraper
       const apifyUrl = `https://api.apify.com/v2/acts/apidojo~tiktok-comments-scraper/runs?token=${process.env.APIFY_TOKEN}`;
       const apifyRun = await axios.post(apifyUrl, {
-        videoUrls: [video.tiktok_url],
+        "startUrls": [video.tiktok_url],
         maxCommentsPerVideo: 10
       });
 
