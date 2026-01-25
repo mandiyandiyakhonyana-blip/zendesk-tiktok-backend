@@ -1,9 +1,8 @@
 {
-  "version": 2,
-  "crons": [
-    {
-      "path": "/api/scrape",
-      "schedule": "0 0 * * *"
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs24.x"
     }
-  ]
+  },
+  "version": 2
 }
